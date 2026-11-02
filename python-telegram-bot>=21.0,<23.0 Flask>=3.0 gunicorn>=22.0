@@ -1,4 +1,112 @@
-import os
+import osimport os
+import logging
+from flask import Flask, request
+from telegram import Update
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    MessageHandler,
+    ContextTypes,
+    filters
+)
+
+logging.basicConfig(level=logging.INFO)
+
+TOKEN = os.getenv("BOT_TOKEN")
+WEBHOOK_URL = os.getenv("WEBHOOK_URL")
+
+app = Flask(__name__)
+
+bot_app = Application.builder().token(TOKEN).build()
+
+files = []
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "🤖 Welcome to All In One Bot!\n\n"
+        "/help - Help\n"
+        "/id - Your ID\n"
+        "/files - Your files"
+    )
+
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "📂 Send documents, videos, audio or photos to me."
+    )
+
+async def get_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        f"Your ID: {update.effective_user.id}"
+    )
+
+async def receive_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    msg = update.message
+
+    if msg.document:
+        files.append(("document", msg.document.file_id))
+    elif msg.video:
+        files.append(("video", msg.video.file_id))
+    elif msg.audio:
+        files.append(("audio", msg.audio.file_id))
+    elif msg.photo:
+        files.append(("photo", msg.photo[-1].file_id))
+    else:
+        return
+
+    await msg.reply_text("✅ File received!")
+
+async def show_files(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not files:
+        await update.message.reply_text("No files uploaded yet.")
+        return
+
+    for kind, file_id in files[-10:]:
+        if kind == "document":
+            await context.bot.send_document(update.effective_chat.id, file_id)
+        elif kind == "video":
+            await context.bot.send_video(update.effective_chat.id, file_id)
+        elif kind == "audio":
+            await context.bot.send_audio(update.effective_chat.id, file_id)
+        elif kind == "photo":
+            await context.bot.send_photo(update.effective_chat.id, file_id)
+
+bot_app.add_handler(CommandHandler("start", start))
+bot_app.add_handler(CommandHandler("help", help_command))
+bot_app.add_handler(CommandHandler("id", get_id))
+bot_app.add_handler(CommandHandler("files", show_files))
+bot_app.add_handler(MessageHandler(
+    filters.Document.ALL | filters.VIDEO | filters.AUDIO | filters.PHOTO,
+    receive_file
+))
+
+@app.route("/", methods=["GET"])
+def home():
+    return "All In One Bot is running!"
+
+@app.route("/webhook", methods=["POST"])
+async def webhook():
+    data = request.get_json(force=True)
+    update = Update.de_json(data, bot_app.bot)
+    await bot_app.process_update(update)
+    return "OK"
+
+@app.route("/health", methods=["GET"])
+def health():
+    return "OK"
+
+if __name__ == "__main__":
+    import asyncio
+    import threading
+    import asyncio
+
+    async def setup():
+        await bot_app.initialize()
+        await bot_app.start()
+        await bot_app.bot.set_webhook(WEBHOOK_URL + "/webhook")
+
+    asyncio.run(setup())
+
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
 import logging
 from telegram import Update
 from telegram.ext import (
